@@ -19,14 +19,6 @@ class QueueServer {
 	 */
 	private $sequence;
 	/**
-	 * @var array
-	 */
-//	private $idLists = [];
-	/**
-	 * @var LinkedList
-	 */
-//	private $messages;
-	/**
 	 * @var string
 	 */
 	private $prefix;
@@ -55,20 +47,25 @@ class QueueServer {
 	}
 
 	/**
+	 * @param $name
+	 * @return Queue
+	 */
+	public function queue($name)
+	{
+		return new Queue($this, $name);
+	}
+
+	/**
 	 * @param $queueName
 	 * @param $payload
 	 * @return QueuedMessage
 	 */
 	public function enqueue($queueName, $payload)
 	{
-//		$queue = $this->getQueue($queueName);
 		list($id, $message) = $this->createMessage($payload);
 		//TODO: this is not transactional and it's ok? check!
-		$this->client->multi();
 		$this->client->set($this->name('messages:'.$id), $message);
 		$this->client->rpush($this->name($queueName), [$id]);
-//		$queue->append([$id]);
-		$this->client->exec();
 
 		return new QueuedMessage($this, $id);
 	}
@@ -76,8 +73,11 @@ class QueueServer {
 	public function pop($queueName)
 	{
 		//TODO: rpoplpush
-		$id = $this->client->lpop($this->name($queueName));
-		$message = $this->client->get($this->name('messages:'.$id));
+		do {
+			$id = $this->client->lpop($this->name($queueName));
+			if (!$id) return false;
+			$message = $this->client->get($this->name('messages:'.$id));
+		} while(!$message);
 		$this->client->del($this->name('messages:'.$id));
 		return $message;
 	}
@@ -87,18 +87,6 @@ class QueueServer {
 		$id = $this->sequence->nextValue();
 		return [$id, json_encode(['id' => $id, 'status' => 'ready', 'payload' => $payload])];
 	}
-
-	/**
-	 * @param $name
-	 * @return LinkedList
-	 */
-//	private function getQueue($name)
-//	{
-//		if (!array_key_exists($name, $this->idLists)) {
-//			$this->idLists[$name] = new LinkedList($this->client, $this->name($name));
-//		}
-//		return $this->idLists[$name];
-//	}
 
 	/**
 	 * @param $id

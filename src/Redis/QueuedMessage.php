@@ -47,4 +47,12 @@ class QueuedMessage {
 	{
 		return $this->queue->deleteMessageById($this->id);
 	}
+
+	/**
+	 * @return int
+	 */
+	public function getId()
+	{
+		return $this->id;
+	}
 }

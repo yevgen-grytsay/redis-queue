@@ -3,6 +3,7 @@
  * @author: yevgen
  * @date: 20.01.17
  */
+use YevhenHrytsai\JobQueue\Redis\QueuedMessage;
 use YevhenHrytsai\JobQueue\Redis\QueueServer;
 use YevhenHrytsai\JobQueue\Redis\Sequence;
 
@@ -10,12 +11,22 @@ require_once __DIR__ . '/../../vendor/autoload.php';
 
 $qname = 'players';
 $server = new QueueServer(new Predis\Client(), new Sequence(new Predis\Client(), 'global_seq'), 'job_queue');
-$server->enqueue($qname, 'Suker');
-$server->enqueue($qname, 'Baia');
-$server->enqueue($qname, 'Stoichkov');
-$server->enqueue($qname, 'Ince');
+$queue = $server->queue($qname);
+/** @var QueuedMessage[] $messages */
+$messages = [
+	$queue->enqueue('Suker'),
+	$queue->enqueue('Baia'),
+	$queue->enqueue('Stoichkov'),
+	$queue->enqueue('Ince'),
+];
+var_dump(array_map(function (QueuedMessage $msg) {
+	return $msg->getId();
+}, $messages));
+//$server->deleteMessageById($ids[0]);
+$messages[0]->delete();
 
-while ($msg = $server->pop($qname)) {
+sleep(3);
+while ($msg = $queue->pop()) {
 	var_dump($msg);
 }
 
