@@ -7,7 +7,7 @@
 namespace YevhenHrytsai\JobQueue\Redis;
 
 
-class Queue {
+class OutChannel {
 	/**
 	 * @var QueueServer
 	 */
@@ -35,13 +35,5 @@ class Queue {
 	public function enqueue($payload)
 	{
 		return $this->server->enqueue($this->name, $payload);
-	}
-
-	/**
-	 * @return bool|string
-	 */
-	public function pop()
-	{
-		return $this->server->pop($this->name);
 	}
 }

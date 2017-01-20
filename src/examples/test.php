@@ -9,8 +9,29 @@ use YevhenHrytsai\JobQueue\Redis\Sequence;
 
 require_once __DIR__ . '/../../vendor/autoload.php';
 
+//class LPopRPush extends Predis\Command\ScriptCommand
+//{
+//	public function getKeysCount()
+//	{
+//		return 2;
+//	}
+//
+//	public function getScript()
+//	{
+//		return <<<LUA
+//local el = redis.call('LPOP', KEYS[1])
+//if el ~= nil then
+//	return redis.call('RPUSH', KEYS[2], el)
+//end
+//return nil
+//LUA;
+//	}
+//}
+
 $qname = 'players';
-$server = new QueueServer(new Predis\Client(), new Sequence(new Predis\Client(), 'global_seq'), 'job_queue');
+$client = new Predis\Client(null, ['prefix' => 'job_queue:']);
+//$client->getProfile()->defineCommand('lpoprpush', 'LPopRPush');
+$server = new QueueServer($client, new Sequence($client, 'global_seq'));
 $queue = $server->queue($qname);
 /** @var QueuedMessage[] $messages */
 $messages = [
@@ -18,16 +39,20 @@ $messages = [
 	$queue->enqueue('Baia'),
 	$queue->enqueue('Stoichkov'),
 	$queue->enqueue('Ince'),
+	$queue->enqueue('Pepsi'),
 ];
 var_dump(array_map(function (QueuedMessage $msg) {
 	return $msg->getId();
 }, $messages));
-//$server->deleteMessageById($ids[0]);
 $messages[0]->delete();
-
-sleep(3);
-while ($msg = $queue->pop()) {
-	var_dump($msg);
+//
+//sleep(3);
+//while ($msg = $queue->pop()) {
+//	var_dump($msg);
+//}
+foreach ($server->consumer(1, $qname)->consume() as $item) {
+	var_dump($item);
+//	throw new RuntimeException("Faulty consumer");
 }
 
 //$client = new Predis\Client();

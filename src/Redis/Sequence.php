@@ -7,11 +7,11 @@
 namespace YevhenHrytsai\JobQueue\Redis;
 
 
-use Predis\Client;
+use Predis\ClientInterface;
 
 class Sequence {
 	/**
-	 * @var Client
+	 * @var ClientInterface
 	 */
 	private $client;
 	/**
@@ -21,10 +21,10 @@ class Sequence {
 
 	/**
 	 * Sequence constructor.
-	 * @param Client $client
+	 * @param ClientInterface $client
 	 * @param string $name
 	 */
-	public function __construct(Client $client, $name)
+	public function __construct(ClientInterface $client, $name)
 	{
 		$this->client = $client;
 		$this->name = $name;

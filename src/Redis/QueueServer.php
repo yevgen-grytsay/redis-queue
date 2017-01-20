@@ -18,29 +18,22 @@ class QueueServer {
 	 * @var Sequence
 	 */
 	private $sequence;
-	/**
-	 * @var string
-	 */
-	private $prefix;
 
 	/**
 	 * Queue constructor.
 	 * @param Client $client
 	 * @param Sequence $sequence
-	 * @param string $prefix
 	 */
-	public function __construct(Client $client, Sequence $sequence, $prefix)
+	public function __construct(Client $client, Sequence $sequence)
 	{
 		$this->client = $client;
 		$this->sequence = $sequence;
-		$this->prefix = $prefix;
 	}
 
-	private function name($name)
-	{
-		return sprintf('%s:%s', $this->prefix, $name);
-	}
-
+	/**
+	 * @param $id
+	 * @return string
+	 */
 	public function getMessageById($id)
 	{
 		return $this->client->get($id);
@@ -48,11 +41,11 @@ class QueueServer {
 
 	/**
 	 * @param $name
-	 * @return Queue
+	 * @return OutChannel
 	 */
 	public function queue($name)
 	{
-		return new Queue($this, $name);
+		return new OutChannel($this, $name);
 	}
 
 	/**
@@ -63,25 +56,27 @@ class QueueServer {
 	public function enqueue($queueName, $payload)
 	{
 		list($id, $message) = $this->createMessage($payload);
-		//TODO: this is not transactional and it's ok? check!
-		$this->client->set($this->name('messages:'.$id), $message);
-		$this->client->rpush($this->name($queueName), [$id]);
-
+		$this->client->transaction()
+			->set('messages:'.$id, $message)
+			->lpush($queueName, [$id])
+			->exec();
 		return new QueuedMessage($this, $id);
 	}
 
-	public function pop($queueName)
+	/**
+	 * @param $consumerId
+	 * @param $queueName
+	 * @return Consumer
+	 */
+	public function consumer($consumerId, $queueName)
 	{
-		//TODO: rpoplpush
-		do {
-			$id = $this->client->lpop($this->name($queueName));
-			if (!$id) return false;
-			$message = $this->client->get($this->name('messages:'.$id));
-		} while(!$message);
-		$this->client->del($this->name('messages:'.$id));
-		return $message;
+		return new Consumer($consumerId, $queueName, $this->client);
 	}
 
+	/**
+	 * @param $payload
+	 * @return array
+	 */
 	private function createMessage($payload)
 	{
 		$id = $this->sequence->nextValue();
@@ -94,6 +89,6 @@ class QueueServer {
 	 */
 	public function deleteMessageById($id)
 	{
-		return $this->client->del($this->name('messages:'.$id)) > 0;
+		return $this->client->del('messages:'.$id) > 0;
 	}
 }

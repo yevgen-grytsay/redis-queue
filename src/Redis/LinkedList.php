@@ -6,11 +6,11 @@
 namespace YevhenHrytsai\JobQueue\Redis;
 
 
-use Predis\Client;
+use Predis\ClientInterface;
 
 class LinkedList {
 	/**
-	 * @var Client
+	 * @var ClientInterface
 	 */
 	private $client;
 	/**
@@ -20,10 +20,10 @@ class LinkedList {
 
 	/**
 	 * YevhenHrytsai\JobQueue\Redis\RedisList constructor.
-	 * @param Client $client
+	 * @param ClientInterface $client
 	 * @param string $key
 	 */
-	public function __construct(Client $client, $key)
+	public function __construct(ClientInterface $client, $key)
 	{
 		$this->client = $client;
 		$this->key = $key;
