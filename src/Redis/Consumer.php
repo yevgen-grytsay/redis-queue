@@ -40,15 +40,14 @@ class Consumer {
 	{
 		$unackedPool = $this->queueName . ':' . $this->id;
 		$this->client->rpoplpush($unackedPool, $this->queueName);
-		//TODO: handle unacked id
 		while (true) {
-			//TODO: rpoplpush
 			$message = null;
 			do {
 				$id = $this->client->rpoplpush($this->queueName, $unackedPool);
 				if (!$id) break;
 				$message = $this->client->get('messages:'.$id);
 				if (!$message) {
+					//TODO use "rm" or "trim" command
 					$this->client->rpop($unackedPool);
 				}
 			} while(!$message);

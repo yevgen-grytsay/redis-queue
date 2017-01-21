@@ -40,18 +40,9 @@ class QueueServer {
 	}
 
 	/**
-	 * @param $name
-	 * @return OutChannel
-	 */
-	public function queue($name)
-	{
-		return new OutChannel($this, $name);
-	}
-
-	/**
 	 * @param $queueName
 	 * @param $payload
-	 * @return QueuedMessage
+	 * @return int
 	 */
 	public function enqueue($queueName, $payload)
 	{
@@ -60,7 +51,7 @@ class QueueServer {
 			->set('messages:'.$id, $message)
 			->lpush($queueName, [$id])
 			->exec();
-		return new QueuedMessage($this, $id);
+		return $id;
 	}
 
 	/**
