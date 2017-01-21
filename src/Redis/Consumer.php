@@ -64,15 +64,16 @@ class Consumer {
 	private function pop()
 	{
 		$message = null;
+		$client = $this->client;
 		do {
-			$id = $this->client->rpoplpush($this->queueName, $this->unackedPool);
+			$id = $client->rpoplpush($this->queueName, $this->unackedPool);
 			$messageBodyKey = $this->messageKey($id);
 			if (!$id) break;
-			$message = $this->client->hgetall($messageBodyKey);
+			$message = $client->hgetall($messageBodyKey);
 			if (!$message) {
-				$this->client->rpop($this->unackedPool);
+				$client->rpop($this->unackedPool);
 			}
-			$this->client->hset($messageBodyKey, 'status', QueueServer::STATUS_PROCESSING);
+			$client->hset($messageBodyKey, 'status', QueueServer::STATUS_PROCESSING);
 		} while(!$message);
 		return [$id, $message];
 	}
