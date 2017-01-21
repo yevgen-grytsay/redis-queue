@@ -92,6 +92,7 @@ class QueueServer {
 	}
 
 	/**
+	 * @param $queueName
 	 * @param $payload
 	 * @return array
 	 */

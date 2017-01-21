@@ -13,11 +13,7 @@ class Consumer {
 	/**
 	 * @var string
 	 */
-	private $id;
-	/**
-	 * @var string
-	 */
-	private $queueName;
+	private $queue;
 	/**
 	 * @var Client
 	 */
@@ -36,11 +32,10 @@ class Consumer {
 	 */
 	public function __construct($id, $queueName, $storageName, Client $client)
 	{
-		$this->id = $id;
-		$this->queueName = $queueName;
+		$this->queue = $queueName;
 		$this->client = $client;
 		$this->storageName = $storageName;
-		$this->unackedPool = $this->queueName . ':' . $this->id;
+		$this->unackedPool = $this->queue . ':' . $id;
 	}
 
 	public function consume()
@@ -58,7 +53,7 @@ class Consumer {
 
 	private function recover()
 	{
-		$this->client->rpoplpush($this->unackedPool, $this->queueName);
+		$this->client->rpoplpush($this->unackedPool, $this->queue);
 	}
 
 	private function pop()
@@ -66,7 +61,7 @@ class Consumer {
 		$message = null;
 		$client = $this->client;
 		do {
-			$id = $client->rpoplpush($this->queueName, $this->unackedPool);
+			$id = $client->rpoplpush($this->queue, $this->unackedPool);
 			$messageBodyKey = $this->messageKey($id);
 			if (!$id) break;
 			$message = $client->hgetall($messageBodyKey);

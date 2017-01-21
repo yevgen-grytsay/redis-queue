@@ -40,8 +40,13 @@ $ids = [
 ];
 var_dump($ids);
 //TODO sleep when there are no messages
+$prevId = 0;
 foreach ($server->consumer(1, $qname)->consume() as $item) {
 	var_dump($server->getStatusById($item['id']), $item);
+	if ($prevId) {
+		var_dump($server->getStatusById($prevId));
+	}
+	$prevId = $item['id'];
 //	throw new RuntimeException("Faulty consumer");
 }
 
