@@ -40,6 +40,7 @@ class Consumer {
 		$this->queueName = $queueName;
 		$this->client = $client;
 		$this->storageName = $storageName;
+		$this->unackedPool = $this->queueName . ':' . $this->id;
 	}
 
 	public function consume()
@@ -57,20 +58,19 @@ class Consumer {
 
 	private function recover()
 	{
-		$this->client->rpoplpush($this->unackedPoolKey(), $this->queueName);
+		$this->client->rpoplpush($this->unackedPool, $this->queueName);
 	}
 
 	private function pop()
 	{
 		$message = null;
-		$unackedPool = $this->unackedPoolKey();
 		do {
-			$id = $this->client->rpoplpush($this->queueName, $unackedPool);
+			$id = $this->client->rpoplpush($this->queueName, $this->unackedPool);
 			$messageBodyKey = $this->messageKey($id);
 			if (!$id) break;
 			$message = $this->client->hgetall($messageBodyKey);
 			if (!$message) {
-				$this->client->rpop($unackedPool);
+				$this->client->rpop($this->unackedPool);
 			}
 			$this->client->hset($messageBodyKey, 'status', QueueServer::STATUS_PROCESSING);
 		} while(!$message);
@@ -82,7 +82,7 @@ class Consumer {
 		$this->client->transaction()
 			->hset($this->messageKey($id), 'status', QueueServer::STATUS_ACKNOWLEDGED)
 			->hdel($this->messageKey($id), ['payload'])
-			->rpop($this->unackedPoolKey())
+			->rpop($this->unackedPool)
 			->exec();
 	}
 
@@ -93,13 +93,5 @@ class Consumer {
 	private function messageKey($id)
 	{
 		return $this->storageName . ':' . $id;
-	}
-
-	/**
-	 * @return string
-	 */
-	private function unackedPoolKey()
-	{
-		return $this->queueName . ':' . $this->id;
 	}
 }
