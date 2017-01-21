@@ -3,6 +3,7 @@
  * @author: yevgen
  * @date: 20.01.17
  */
+use YevhenHrytsai\JobQueue\Redis\Delivery;
 use YevhenHrytsai\JobQueue\Redis\QueueServer;
 use YevhenHrytsai\JobQueue\Redis\Sequence;
 
@@ -40,15 +41,9 @@ $ids = [
 ];
 var_dump($ids);
 //TODO sleep when there are no messages
-$prevId = 0;
-foreach ($server->consumer(1, $qname)->consume() as $item) {
-	var_dump($server->getStatusById($item['id']), $item);
-	if ($prevId) {
-		var_dump($server->getStatusById($prevId));
-	}
-	$prevId = $item['id'];
-//	throw new RuntimeException("Faulty consumer");
-}
+$server->consumer(1, $qname)->consume(function (Delivery $delivery) {
+	var_dump($delivery->getStatus(), $delivery->getPayload());
+});
 
 //$client = new Predis\Client();
 //$seq = new \YevhenHrytsai\JobQueue\Redis\Sequence($client, 'job_queue_pk_seq');

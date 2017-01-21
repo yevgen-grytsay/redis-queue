@@ -22,6 +22,10 @@ class Consumer {
 	 * @var string
 	 */
 	private $storageName;
+	/**
+	 * @var string
+	 */
+	private $unackedPool;
 
 	/**
 	 * Consumer constructor.
@@ -35,19 +39,32 @@ class Consumer {
 		$this->queue = $queueName;
 		$this->client = $client;
 		$this->storageName = $storageName;
-		$this->unackedPool = $this->queue . ':' . $id;
+		$this->unackedPool = $this->queue . ':unacked:' . $id;
 	}
 
-	public function consume()
+	/**
+	 * @param callable $callback
+	 */
+	public function consume(callable $callback)
 	{
 		$this->recover();
 		while (true) {
-			list($id, $message) = $this->pop();
-			if (!$message) {
+			$delivery = $this->pop();
+			if (!$delivery) {
 				break;
 			}
-			yield $message;
-			$this->ack($id);
+			call_user_func($callback, $delivery);
+		}
+	}
+
+	/**
+	 * @param callable $callback
+	 */
+	public function consumeBlocking(callable $callback)
+	{
+		$this->recover();
+		while (true) {
+			call_user_func($callback, $this->pop(true));
 		}
 	}
 
@@ -56,30 +73,39 @@ class Consumer {
 		$this->client->rpoplpush($this->unackedPool, $this->queue);
 	}
 
-	private function pop()
+	/**
+	 * @param bool $blocking
+	 * @return null|Delivery
+	 */
+	private function pop($blocking = false)
 	{
 		$message = null;
 		$client = $this->client;
-		do {
-			$id = $client->rpoplpush($this->queue, $this->unackedPool);
-			$messageBodyKey = $this->messageKey($id);
+		while(!$message) {
+			$id = $blocking
+				? $client->brpoplpush($this->queue, $this->unackedPool, 10)
+				: $client->rpoplpush($this->queue, $this->unackedPool);
 			if (!$id) break;
-			$message = $client->hgetall($messageBodyKey);
-			if (!$message) {
+			$data = $this->findMessageBodyById($id);
+			/* Message may be deleted before it will be processed */
+			if (!$data) {
 				$client->rpop($this->unackedPool);
+			} else {
+				$message = new Delivery($data['payload'], $this->messageKey($id), $this->unackedPool, $client);
+				$message->updateStatus(QueueServer::STATUS_PROCESSING);
 			}
-			$client->hset($messageBodyKey, 'status', QueueServer::STATUS_PROCESSING);
-		} while(!$message);
-		return [$id, $message];
+		};
+
+		return $message;
 	}
 
-	private function ack($id)
+	/**
+	 * @param $id
+	 * @return array
+	 */
+	private function findMessageBodyById($id)
 	{
-		$this->client->transaction()
-			->hset($this->messageKey($id), 'status', QueueServer::STATUS_ACKNOWLEDGED)
-			->hdel($this->messageKey($id), ['payload'])
-			->rpop($this->unackedPool)
-			->exec();
+		return $this->client->hgetall($this->messageKey($id));
 	}
 
 	/**

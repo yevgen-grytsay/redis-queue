@@ -30,7 +30,8 @@ class Sequence {
 		$this->name = $name;
 	}
 
-	public function nextValue() {
+	public function nextValue()
+	{
 		return $this->client->incr($this->name);
 	}
 }
