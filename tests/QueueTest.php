@@ -15,6 +15,7 @@ class QueueTest extends TestCase {
 	private $prefix = 'phpunit:';
 	private $listKey;
 	private $hashKey;
+	private $consumerId = 1;
 	/**
 	 * @var QueueServer
 	 */
@@ -35,8 +36,9 @@ class QueueTest extends TestCase {
 
 	public function testEnqueue()
 	{
-		$this->queue->enqueue($this->queueName, $this->payload);
+		$id = $this->enqueue();
 		$this->assertEquals(1, $this->client->llen($this->listKey));
+		$this->assertEquals($id, $this->client->lpop($this->listKey));
 	}
 
 	public function testStoreMessage()
@@ -45,17 +47,17 @@ class QueueTest extends TestCase {
 		$expected = [
 			'id' => ''.$id,
 			'queue' => $this->queueName,
-			'payload' => $this->payload,
-			'status' => QueueServer::STATUS_READY
+			'status' => QueueServer::STATUS_READY,
+			'payload' => $this->payload
 		];
 		$this->assertEquals($expected, $this->client->hgetall($this->hashKey.':'.$id));
 	}
 
 	public function testConsume()
 	{
-		$this->queue->enqueue($this->queueName, $this->payload);
+		$this->enqueue();
 		$actual = [];
-		$this->queue->consumer(1, $this->queueName)->consume(function (Delivery $message) use (&$actual) {
+		$this->consume(function (Delivery $message) use (&$actual) {
 			$actual = $message->getPayload();
 		});
 		$this->assertEquals($this->payload, $actual);
@@ -64,10 +66,10 @@ class QueueTest extends TestCase {
 
 	public function testRecover()
 	{
-		$id = $this->queue->enqueue($this->queueName, $this->payload);
+		$id = $this->enqueue();
 		$this->client->rpoplpush($this->listKey, $this->listKey.':unacked:'.$id);
 		$this->assertEquals(0, $this->client->llen($this->listKey));
-		$this->queue->consumer(1, $this->queueName)->consume(function (Delivery $message) use (&$actual) {
+		$this->consume(function (Delivery $message) use (&$actual) {
 			$actual = $message->getPayload();
 		});
 		$this->assertEquals($this->payload, $actual);
@@ -76,9 +78,9 @@ class QueueTest extends TestCase {
 
 	public function testStatus()
 	{
-		$id = $this->queue->enqueue($this->queueName, $this->payload);
+		$id = $this->enqueue();
 		$this->assertEquals(QueueServer::STATUS_READY, $this->client->hget($this->hashKey.':'.$id, 'status'));
-		$this->queue->consumer(1, $this->queueName)->consume(function (Delivery $message) use (&$actual) {
+		$this->consume(function (Delivery $message) use (&$actual) {
 			$this->assertEquals(QueueServer::STATUS_PROCESSING, $message->getStatus());
 			$message->ack();
 			$this->assertEquals(QueueServer::STATUS_ACKNOWLEDGED, $message->getStatus());
@@ -91,4 +93,13 @@ class QueueTest extends TestCase {
 		$this->client->flushdb();
 	}
 
+	private function consume(callable $callback)
+	{
+		$this->queue->consumer($this->consumerId, $this->queueName)->consume($callback);
+	}
+
+	private function enqueue()
+	{
+		return $this->queue->enqueue($this->queueName, $this->payload);
+	}
 }
