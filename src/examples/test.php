@@ -33,29 +33,36 @@ $client = new Predis\Client(null, ['prefix' => 'job_queue:']);
 //$client->getProfile()->defineCommand('lpoprpush', 'LPopRPush');
 $server = new QueueServer($client, new Sequence($client, 'global_seq'));
 $ids = [
-	$server->enqueue($qname, 'Suker'),
-	$server->enqueue($qname, 'Baia'),
-	$server->enqueue($qname, 'Stoichkov'),
-	$server->enqueue($qname, 'Ince'),
-	$server->enqueue($qname, 'Pepsi'),
+    $server->enqueue($qname, 'Suker'),
+    $server->enqueue($qname, 'Baia'),
+    $server->enqueue($qname, 'Stoichkov'),
+    $server->enqueue($qname, 'Ince'),
+    $server->enqueue($qname, 'Pepsi'),
 ];
 var_dump($ids);
-//TODO sleep when there are no messages
-$server->consumer(1, $qname)->consume(function (Delivery $delivery) {
-	var_dump($delivery->getStatus(), $delivery->getPayload());
-});
+
+
+$message = null;
+while(true) {
+    $message = $server->pop(1, $qname, false);
+    if ($server->isTerminator($message)) {
+        echo 'Queue is empty', PHP_EOL;
+        break;
+    }
+    var_dump($message->getStatus(), $message->getPayload());
+}
 
 //$client = new Predis\Client();
 //$seq = new \YevhenHrytsai\JobQueue\Redis\Sequence($client, 'job_queue_pk_seq');
 //var_dump($seq->nextValue());
 
 function simpleAddAndRemove() {
-	$client = new Predis\Client();
-	$client->set('foo', 'bar');
-	$value = $client->get('foo');
-	var_dump($value);
+    $client = new Predis\Client();
+    $client->set('foo', 'bar');
+    $value = $client->get('foo');
+    var_dump($value);
 
-	$client->del('foo');
-	$value = $client->get('foo');
-	var_dump($value);
+    $client->del('foo');
+    $value = $client->get('foo');
+    var_dump($value);
 }
