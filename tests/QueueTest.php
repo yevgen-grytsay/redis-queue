@@ -34,33 +34,37 @@ class QueueTest extends TestCase {
 		$this->hashKey = $this->prefix . 'messages';
 	}
 
+	protected function tearDown()
+	{
+		$this->client->flushdb();
+	}
+
 	public function testEnqueue()
 	{
 		$id = $this->enqueue();
-		$this->assertEquals(1, $this->client->llen($this->listKey));
 		$this->assertEquals($id, $this->client->lpop($this->listKey));
 	}
 
 	public function testStoreMessage()
 	{
-		$id = $this->queue->enqueue($this->queueName, $this->payload);
+		$id = $this->enqueue();
 		$expected = [
 			'id' => ''.$id,
 			'queue' => $this->queueName,
 			'status' => QueueServer::STATUS_READY,
 			'payload' => $this->payload
 		];
-		$this->assertEquals($expected, $this->client->hgetall($this->hashKey.':'.$id));
+		$this->assertEquals($expected, $this->getMessageById($id));
 	}
 
 	public function testConsume()
 	{
-		$this->enqueue();
+		$id = $this->enqueue();
 		$actual = [];
 		$this->consume(function (Delivery $message) use (&$actual) {
 			$actual = $message->getPayload();
 		});
-		$this->assertEquals($this->payload, $actual);
+		$this->assertPayload($id);
 		$this->assertEquals(0, $this->client->llen($this->listKey));
 	}
 
@@ -79,18 +83,32 @@ class QueueTest extends TestCase {
 	public function testStatus()
 	{
 		$id = $this->enqueue();
-		$this->assertEquals(QueueServer::STATUS_READY, $this->client->hget($this->hashKey.':'.$id, 'status'));
+		$this->assertStatus($id, QueueServer::STATUS_READY);
 		$this->consume(function (Delivery $message) use (&$actual) {
 			$this->assertEquals(QueueServer::STATUS_PROCESSING, $message->getStatus());
 			$message->ack();
 			$this->assertEquals(QueueServer::STATUS_ACKNOWLEDGED, $message->getStatus());
 		});
-
 	}
 
-	protected function tearDown()
+	private function assertPayload($id)
 	{
-		$this->client->flushdb();
+		$this->assertEquals($this->payload, $this->getMessageFieldById($id, 'payload'));
+	}
+
+	private function assertStatus($id, $expected)
+	{
+		$this->assertEquals($expected, $this->getMessageFieldById($id, 'status'));
+	}
+
+	private function getMessageFieldById($id, $field)
+	{
+		return $this->client->hgetall($this->hashKey.':'.$id)[$field];
+	}
+
+	private function getMessageById($id)
+	{
+		return $this->client->hgetall($this->hashKey.':'.$id);
 	}
 
 	private function consume(callable $callback)
