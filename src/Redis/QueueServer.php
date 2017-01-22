@@ -13,6 +13,7 @@ class QueueServer {
 	const STATUS_READY = 'ready';
 	const STATUS_PROCESSING = 'processing';
 	const STATUS_ACKNOWLEDGED = 'ack';
+	const STATUS_DISCARDED = 'discarded';
 	/**
 	 * @var Client
 	 */
@@ -21,22 +22,16 @@ class QueueServer {
 	 * @var Sequence
 	 */
 	private $sequence;
-	/**
-	 * @var string
-	 */
-	private $messageStorage;
 
 	/**
 	 * Queue constructor.
 	 * @param Client $client
 	 * @param Sequence $sequence
-	 * @param $messageStorage
 	 */
-	public function __construct(Client $client, Sequence $sequence, $messageStorage = 'messages')
+	public function __construct(Client $client, Sequence $sequence)
 	{
 		$this->client = $client;
 		$this->sequence = $sequence;
-		$this->messageStorage = $messageStorage;
 	}
 
 	/**
@@ -46,22 +41,84 @@ class QueueServer {
 	 */
 	public function enqueue($queueName, $payload)
 	{
-		list($id, $message) = $this->createMessage($queueName, $payload);
+		$id = $this->sequence->nextValue();
+		$header = ['id' => $id, 'queue' => $queueName];
+		$message = json_encode(['id' => $id, 'payload' => $payload]);
 		$this->client->transaction()
-			->hmset('messages:'.$id, $message)
-			->lpush($queueName, [$id])
+			->hmset(static::headerKey($id), $header)
+			->lpush($queueName, $message)
 			->exec();
 		return $id;
 	}
 
 	/**
-	 * @param $consumerId
-	 * @param $queueName
-	 * @return Consumer
+	 * @param $id
+	 * @return string
 	 */
-	public function consumer($consumerId, $queueName)
+	private static function headerKey($id)
 	{
-		return new Consumer($consumerId, $queueName, $this->messageStorage, $this->client);
+		return 'messages:' . $id;
+	}
+
+	/**
+	 * Возвращает одно сообщение из личного пула неподтвержденных сообщений обратно в общую очередь.
+	 * Это может понадобиться, если воркер "упал", не успев подтвердить обработку сообщения.
+	 *
+	 * Из соображений сделать API библиотеки как можно "тоньше",
+	 * запуск восстановления возлагается на клиентский код.
+	 *
+	 * @param $consumerId
+	 * @param $queue
+	 */
+	public function recover($consumerId, $queue)
+	{
+		$this->client->rpoplpush(self::unackedKey($queue, $consumerId), $queue);
+	}
+
+	/**
+	 * @param $queue
+	 * @param $consumerId
+	 * @return string
+	 */
+	private static function unackedKey($queue, $consumerId)
+	{
+		return $queue . ':unacked:' . $consumerId;
+	}
+
+	/**
+	 * Берет одно сообщение из начала очереди.
+	 *
+	 * @param string $consumerId
+	 * @param string $queue
+	 * @param bool $blocking
+	 * @param int $timeoutSec
+	 * @return null|Delivery Метод возвращает null в двух случаях:
+	 *                       1) в очереди нет сообщений;
+	 *                       2) из очереди было взято сообщение, обработка которого была отменена
+	 */
+	public function pop($consumerId, $queue, $blocking = false, $timeoutSec = 10)
+	{
+		$unackedPool = static::unackedKey($queue, $consumerId);
+		$message = null;
+		$client = $this->client;
+		$rawMessage = $blocking
+			? $client->brpoplpush($queue, $unackedPool, $timeoutSec)
+			: $client->rpoplpush($queue, $unackedPool);
+		$data = json_decode($rawMessage, true);
+		if (!$data) return null;
+
+		$id = $data['id'];
+		/*
+		 * Предполагается, что единственная причина, по которой у сообщения, взятого из очереди,
+		 * есть статус, это установка статуса в DISCARDED с целью отменить обработку сообщения.
+		 */
+		if ($client->hsetnx(static::headerKey($id), 'status', QueueServer::STATUS_PROCESSING)) {
+			$message = new Delivery($data['payload'], static::headerKey($id), $unackedPool, $client);
+		} else {
+			$client->rpop($unackedPool);
+		}
+
+		return $message;
 	}
 
 	/**
@@ -70,7 +127,7 @@ class QueueServer {
 	 */
 	public function getMessageById($id)
 	{
-		return $this->client->get($this->key($id));
+		return $this->client->get(static::headerKey($id));
 	}
 
 	/**
@@ -79,7 +136,7 @@ class QueueServer {
 	 */
 	public function deleteMessageById($id)
 	{
-		return $this->client->del([$this->key($id)]) > 0;
+		return $this->client->hsetnx(static::headerKey($id), 'status', self::STATUS_DISCARDED) === 1;
 	}
 
 	/**
@@ -88,26 +145,6 @@ class QueueServer {
 	 */
 	public function getStatusById($id)
 	{
-		return $this->client->hget($this->key($id), 'status');
-	}
-
-	/**
-	 * @param $queueName
-	 * @param $payload
-	 * @return array
-	 */
-	private function createMessage($queueName, $payload)
-	{
-		$id = $this->sequence->nextValue();
-		return [$id, ['id' => $id, 'queue' => $queueName, 'status' => self::STATUS_READY, 'payload' => $payload]];
-	}
-
-	/**
-	 * @param $id
-	 * @return string
-	 */
-	private function key($id)
-	{
-		return $this->messageStorage . ':' . $id;
+		return $this->client->hget(static::headerKey($id), 'status');
 	}
 }

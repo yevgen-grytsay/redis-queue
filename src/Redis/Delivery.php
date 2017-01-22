@@ -46,8 +46,7 @@ class Delivery {
 	{
 		$this->client->transaction()
 			->hset($this->key, 'status', QueueServer::STATUS_ACKNOWLEDGED)
-			->hdel($this->key, ['payload'])
-			->rpop($this->unackedPool) //TODO use lrem
+			->rpop($this->unackedPool) //TODO use lrem?
 			->exec();
 	}
 
@@ -57,14 +56,6 @@ class Delivery {
 	public function getPayload()
 	{
 		return $this->payload;
-	}
-
-	/**
-	 * @param $status
-	 */
-	public function updateStatus($status)
-	{
-		$this->client->hset($this->key, 'status', $status);
 	}
 
 	/**

@@ -42,7 +42,11 @@ class QueueTest extends TestCase {
 	public function testEnqueue()
 	{
 		$id = $this->enqueue();
-		$this->assertEquals($id, $this->client->lpop($this->listKey));
+		$expected = [
+			'id' => ''.$id,
+			'payload' => $this->payload
+		];
+		$this->assertEquals($expected, json_decode($this->popMessage(), true));
 	}
 
 	public function testStoreMessage()
@@ -51,20 +55,14 @@ class QueueTest extends TestCase {
 		$expected = [
 			'id' => ''.$id,
 			'queue' => $this->queueName,
-			'status' => QueueServer::STATUS_READY,
-			'payload' => $this->payload
 		];
-		$this->assertEquals($expected, $this->getMessageById($id));
+		$this->assertEquals($expected, $this->getHeaderById($id));
 	}
 
 	public function testConsume()
 	{
-		$id = $this->enqueue();
-		$actual = [];
-		$this->consume(function (Delivery $message) use (&$actual) {
-			$actual = $message->getPayload();
-		});
-		$this->assertPayload($id);
+		$this->enqueue();
+		$this->assertEquals($this->payload, $this->pop()->getPayload());
 		$this->assertEquals(0, $this->client->llen($this->listKey));
 	}
 
@@ -73,51 +71,46 @@ class QueueTest extends TestCase {
 		$id = $this->enqueue();
 		$this->client->rpoplpush($this->listKey, $this->listKey.':unacked:'.$id);
 		$this->assertEquals(0, $this->client->llen($this->listKey));
-		$this->consume(function (Delivery $message) use (&$actual) {
-			$actual = $message->getPayload();
-		});
-		$this->assertEquals($this->payload, $actual);
+
+		$this->recover();
+		$this->assertEquals($this->payload, $this->pop()->getPayload());
 		$this->assertEquals(0, $this->client->llen($this->listKey));
 	}
 
 	public function testStatus()
 	{
 		$id = $this->enqueue();
-		$this->assertStatus($id, QueueServer::STATUS_READY);
-		$this->consume(function (Delivery $message) use (&$actual) {
-			$this->assertEquals(QueueServer::STATUS_PROCESSING, $message->getStatus());
-			$message->ack();
-			$this->assertEquals(QueueServer::STATUS_ACKNOWLEDGED, $message->getStatus());
-		});
+		$header = $this->getHeaderById($id);
+		$this->assertFalse(array_key_exists('status', $header));
+
+		$message = $this->pop();
+		$this->assertEquals(QueueServer::STATUS_PROCESSING, $message->getStatus());
+		$message->ack();
+		$this->assertEquals(QueueServer::STATUS_ACKNOWLEDGED, $message->getStatus());
 	}
 
-	private function assertPayload($id)
+	private function popMessage()
 	{
-		$this->assertEquals($this->payload, $this->getMessageFieldById($id, 'payload'));
+		return $this->client->lpop($this->listKey);
 	}
 
-	private function assertStatus($id, $expected)
-	{
-		$this->assertEquals($expected, $this->getMessageFieldById($id, 'status'));
-	}
-
-	private function getMessageFieldById($id, $field)
-	{
-		return $this->client->hgetall($this->hashKey.':'.$id)[$field];
-	}
-
-	private function getMessageById($id)
+	private function getHeaderById($id)
 	{
 		return $this->client->hgetall($this->hashKey.':'.$id);
 	}
 
-	private function consume(callable $callback)
+	private function pop()
 	{
-		$this->queue->consumer($this->consumerId, $this->queueName)->consume($callback);
+		return $this->queue->pop($this->consumerId, $this->queueName);
 	}
 
 	private function enqueue()
 	{
 		return $this->queue->enqueue($this->queueName, $this->payload);
+	}
+
+	private function recover()
+	{
+		$this->queue->recover($this->consumerId, $this->queueName);
 	}
 }
