@@ -79,6 +79,7 @@ class QueueServer {
     /**
      * Возвращает одно сообщение из личного пула неподтвержденных сообщений обратно в общую очередь.
      * Это может понадобиться, если воркер "упал", не успев подтвердить обработку сообщения.
+     * Если в пуле нет сообщений, ничего не делает.
      *
      * Из соображений сделать API библиотеки как можно "тоньше",
      * запуск восстановления возлагается на клиентский код.
@@ -88,7 +89,14 @@ class QueueServer {
      */
     public function recover($consumerId, $queue)
     {
-        $this->client->rpoplpush(self::unackedKey($queue, $consumerId), $queue);
+        $backup = $this->client->rpop(self::unackedKey($queue, $consumerId));
+        if (!$backup) return;
+        $data = self::decode($backup);
+        $id = $data['id'];
+        $this->client->transaction()
+            ->hdel(self::headerKey($id), ['status'])
+            ->rpush($queue, [$backup])
+            ->exec();
     }
 
     /**
@@ -111,7 +119,7 @@ class QueueServer {
         $rawMessage = $blocking
             ? $client->brpoplpush($queue, $unackedPool, $timeoutSec)
             : $client->rpoplpush($queue, $unackedPool);
-        $data = json_decode($rawMessage, true);
+        $data = self::decode($rawMessage);
         if (!$data) return $this->terminator;
 
         $id = $data['id'];
@@ -126,6 +134,15 @@ class QueueServer {
         }
 
         return $message;
+    }
+
+    /**
+     * @param $rawMessage
+     * @return mixed
+     */
+    private static function decode($rawMessage)
+    {
+        return json_decode($rawMessage, true);
     }
 
     /**

@@ -58,15 +58,42 @@ class QueueTest extends TestCase {
         $this->enqueue();
         $this->assertEquals($this->payload, $this->pop()->getPayload());
         $this->assertQueueLengthEquals(0);
+        $this->assertUnackedPoolLengthEquals(1);
     }
 
-    public function testDiscard()
+    public function testRecover()
+    {
+        $this->enqueue();
+        $this->pop();
+        $this->recover();
+        $this->assertQueueLengthEquals(1);
+        $this->assertUnackedPoolLengthEquals(0);
+    }
+
+    public function testConsumeRecovered()
+    {
+        $this->enqueue();
+        $this->pop();
+        $this->recover();
+        $this->assertEquals($this->payload, $this->pop()->getPayload());
+        $this->assertQueueLengthEquals(0);
+        $this->assertUnackedPoolLengthEquals(1);
+    }
+
+    public function testShouldDiscardMessage()
     {
         $id = $this->enqueue();
-        $this->queue->discardMessageById($id);
+        $this->assertTrue($this->queue->discardMessageById($id));
         $this->assertNull($this->pop());
         $this->assertQueueLengthEquals(0);
         $this->assertEquals(QueueServer::STATUS_DISCARDED, $this->client->hget($this->prefix.QueueServer::headerKey($id), 'status'));
+    }
+
+    public function testShouldNotDiscardMessageBeingProcessed()
+    {
+        $id = $this->enqueue();
+        $this->pop();
+        $this->assertFalse($this->queue->discardMessageById($id));
     }
 
     public function testTerminator()
@@ -75,15 +102,9 @@ class QueueTest extends TestCase {
         $this->assertTrue($this->queue->isTerminator($message));
     }
 
-    public function testRecover()
+    public function testNothingToRecover()
     {
-        $this->enqueue();
-        $this->client->rpoplpush($this->listKey, $this->prefix.QueueServer::unackedKey($this->queueName, $this->consumerId));
-        $this->assertQueueLengthEquals(0);
-
         $this->recover();
-        $this->assertEquals($this->payload, $this->pop()->getPayload());
-        $this->assertQueueLengthEquals(0);
     }
 
     public function testStatus()
@@ -96,6 +117,14 @@ class QueueTest extends TestCase {
         $this->assertEquals(QueueServer::STATUS_PROCESSING, $message->getStatus());
         $message->ack();
         $this->assertEquals(QueueServer::STATUS_ACKNOWLEDGED, $message->getStatus());
+    }
+
+    public function testShouldDeleteAckedMessage()
+    {
+        $this->enqueue();
+        $this->pop()->ack();
+        $this->assertQueueLengthEquals(0);
+        $this->assertUnackedPoolLengthEquals(0);
     }
 
     private function popMessage()
@@ -121,6 +150,11 @@ class QueueTest extends TestCase {
     private function recover()
     {
         $this->queue->recover($this->consumerId, $this->queueName);
+    }
+
+    private function assertUnackedPoolLengthEquals($expected)
+    {
+        $this->assertEquals($expected, $this->client->llen($this->prefix . QueueServer::unackedKey($this->queueName, $this->consumerId)));
     }
 
     private function assertQueueLengthEquals($expected)
