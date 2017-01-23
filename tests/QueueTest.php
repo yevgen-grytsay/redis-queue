@@ -114,9 +114,9 @@ class QueueTest extends TestCase {
         $this->assertFalse(array_key_exists('status', $header));
 
         $message = $this->pop();
-        $this->assertEquals(QueueServer::STATUS_PROCESSING, $message->getStatus());
+        $this->assertEquals(QueueServer::STATUS_PROCESSING, $this->getMessageStatusById($id));
         $message->ack();
-        $this->assertEquals(QueueServer::STATUS_ACKNOWLEDGED, $message->getStatus());
+        $this->assertEquals(QueueServer::STATUS_ACKNOWLEDGED, $this->getMessageStatusById($id));
     }
 
     public function testShouldDeleteAckedMessage()
@@ -160,5 +160,10 @@ class QueueTest extends TestCase {
     private function assertQueueLengthEquals($expected)
     {
         $this->assertEquals($expected, $this->client->llen($this->listKey));
+    }
+
+    private function getMessageStatusById($id)
+    {
+        return $this->queue->getStatusById($id);
     }
 }

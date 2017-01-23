@@ -49,10 +49,10 @@ class QueueServer {
     {
         $id = $this->sequence->nextValue();
         $header = ['id' => $id, 'queue' => $queueName];
-        $message = json_encode(['id' => $id, 'payload' => $payload]);
+        $message = Delivery::encode(['id' => $id, 'payload' => $payload]);
         $this->client->transaction()
             ->hmset(static::headerKey($id), $header)
-            ->lpush($queueName, $message)
+            ->lpush($queueName, [$message])
             ->exec();
         return $id;
     }
@@ -91,7 +91,7 @@ class QueueServer {
     {
         $backup = $this->client->rpop(self::unackedKey($queue, $consumerId));
         if (!$backup) return;
-        $data = self::decode($backup);
+        $data = Delivery::decode($backup);
         $id = $data['id'];
         $this->client->transaction()
             ->hdel(self::headerKey($id), ['status'])
@@ -119,7 +119,7 @@ class QueueServer {
         $rawMessage = $blocking
             ? $client->brpoplpush($queue, $unackedPool, $timeoutSec)
             : $client->rpoplpush($queue, $unackedPool);
-        $data = self::decode($rawMessage);
+        $data = Delivery::decode($rawMessage);
         if (!$data) return $this->terminator;
 
         $id = $data['id'];
@@ -128,21 +128,12 @@ class QueueServer {
          * есть статус, это установка статуса в DISCARDED с целью отменить обработку сообщения.
          */
         if ($client->hsetnx(static::headerKey($id), 'status', QueueServer::STATUS_PROCESSING)) {
-            $message = new Delivery($data['payload'], static::headerKey($id), $unackedPool, $client);
+            $message = new Delivery($data, static::headerKey($id), $unackedPool, $client);
         } else {
-            $client->lrem($unackedPool, 1, $rawMessage);
+            $client->lpop($unackedPool);
         }
 
         return $message;
-    }
-
-    /**
-     * @param $rawMessage
-     * @return mixed
-     */
-    private static function decode($rawMessage)
-    {
-        return json_decode($rawMessage, true);
     }
 
     /**

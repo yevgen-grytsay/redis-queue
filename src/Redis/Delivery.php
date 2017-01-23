@@ -11,9 +11,9 @@ use Predis\Client;
 
 class Delivery {
     /**
-     * @var string
+     * @var array
      */
-    private $payload;
+    private $data;
     /**
      * @var string
      */
@@ -29,17 +29,35 @@ class Delivery {
 
     /**
      * Delivery constructor.
-     * @param string $payload
+     * @param array $data
      * @param string $key
      * @param string $unackedPool
      * @param Client $client
      */
-    public function __construct($payload, $key, $unackedPool, Client $client)
+    public function __construct(array $data, $key, $unackedPool, Client $client)
     {
-        $this->payload = $payload;
+        $this->data = $data;
         $this->key = $key;
         $this->unackedPool = $unackedPool;
         $this->client = $client;
+    }
+
+    /**
+     * @param array $message
+     * @return string
+     */
+    public static function encode(array $message)
+    {
+        return json_encode($message);
+    }
+
+    /**
+     * @param $rawMessage
+     * @return mixed
+     */
+    public static function decode($rawMessage)
+    {
+        return json_decode($rawMessage, true);
     }
 
     public function ack()
@@ -55,14 +73,14 @@ class Delivery {
      */
     public function getPayload()
     {
-        return $this->payload;
+        return $this->data['payload'];
     }
 
     /**
      * @return string
      */
-    public function getStatus()
+    public function getId()
     {
-        return $this->client->hget($this->key, 'status');
+        return $this->data['id'];
     }
 }
