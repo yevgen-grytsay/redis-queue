@@ -37,17 +37,13 @@ class QueueTest extends TestCase {
         $this->client->flushdb();
     }
 
-    public function testEnqueue()
+    public function testEnqueuePayload()
     {
-        $id = $this->enqueue();
-        $expected = [
-            'id' => ''.$id,
-            'payload' => $this->payload
-        ];
-        $this->assertEquals($expected, json_decode($this->popMessage(), true));
+        $this->enqueue();
+        $this->assertQueueLengthEquals(1);
     }
 
-    public function testStoreMessage()
+    public function testStoreHeaders()
     {
         $id = $this->enqueue();
         $expected = [
@@ -61,7 +57,16 @@ class QueueTest extends TestCase {
     {
         $this->enqueue();
         $this->assertEquals($this->payload, $this->pop()->getPayload());
-        $this->assertEquals(0, $this->client->llen($this->listKey));
+        $this->assertQueueLengthEquals(0);
+    }
+
+    public function testDiscard()
+    {
+        $id = $this->enqueue();
+        $this->queue->discardMessageById($id);
+        $this->assertNull($this->pop());
+        $this->assertQueueLengthEquals(0);
+        $this->assertEquals(QueueServer::STATUS_DISCARDED, $this->client->hget($this->prefix.QueueServer::headerKey($id), 'status'));
     }
 
     public function testTerminator()
@@ -74,11 +79,11 @@ class QueueTest extends TestCase {
     {
         $this->enqueue();
         $this->client->rpoplpush($this->listKey, $this->prefix.QueueServer::unackedKey($this->queueName, $this->consumerId));
-        $this->assertEquals(0, $this->client->llen($this->listKey));
+        $this->assertQueueLengthEquals(0);
 
         $this->recover();
         $this->assertEquals($this->payload, $this->pop()->getPayload());
-        $this->assertEquals(0, $this->client->llen($this->listKey));
+        $this->assertQueueLengthEquals(0);
     }
 
     public function testStatus()
@@ -116,5 +121,10 @@ class QueueTest extends TestCase {
     private function recover()
     {
         $this->queue->recover($this->consumerId, $this->queueName);
+    }
+
+    private function assertQueueLengthEquals($expected)
+    {
+        $this->assertEquals($expected, $this->client->llen($this->listKey));
     }
 }

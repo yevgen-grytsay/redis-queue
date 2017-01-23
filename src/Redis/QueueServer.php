@@ -101,7 +101,7 @@ class QueueServer {
      * @return null|Delivery|\stdClass Метод возвращает
      *                                 1) null, если из очереди было взято сообщение, обработка которого была отменена
      *	                               2) экземпляр terminator, если в очереди нет сообщений;
-     *		                           3) сообщение
+     *                                 3) сообщение
      */
     public function pop($consumerId, $queue, $blocking = false, $timeoutSec = 10)
     {
@@ -122,7 +122,7 @@ class QueueServer {
         if ($client->hsetnx(static::headerKey($id), 'status', QueueServer::STATUS_PROCESSING)) {
             $message = new Delivery($data['payload'], static::headerKey($id), $unackedPool, $client);
         } else {
-            $client->rpop($unackedPool);
+            $client->lrem($unackedPool, 1, $rawMessage);
         }
 
         return $message;
@@ -141,7 +141,7 @@ class QueueServer {
      * @param $id
      * @return bool
      */
-    public function deleteMessageById($id)
+    public function discardMessageById($id)
     {
         return $this->client->hsetnx(static::headerKey($id), 'status', self::STATUS_DISCARDED) === 1;
     }
